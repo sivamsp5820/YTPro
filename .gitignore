@@ -1,0 +1,19 @@
+# Gradle build cache & output
+.gradle/
+build/
+*/build/
+local.properties
+
+# IDE & Android Studio
+.idea/
+*.iml
+.navigation/
+captures/
+.externalNativeBuild
+.cxx/
+*.apk
+*.aar
+
+# OS files
+.DS_Store
+Thumbs.db

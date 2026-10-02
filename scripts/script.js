@@ -76,6 +76,15 @@ localStorage.setItem(x,"true");
 });
 
 }
+
+if (localStorage.getItem("ytpro_eq_enabled") == null) localStorage.setItem("ytpro_eq_enabled", "true");
+if (localStorage.getItem("ytpro_eq_preset") == null) localStorage.setItem("ytpro_eq_preset", "jamesdsp");
+if (localStorage.getItem("ytpro_bass_boost") == null) localStorage.setItem("ytpro_bass_boost", "6");
+if (localStorage.getItem("ytpro_treble_boost") == null) localStorage.setItem("ytpro_treble_boost", "4");
+if (localStorage.getItem("ytpro_skip_silence") == null) localStorage.setItem("ytpro_skip_silence", "true");
+if (localStorage.getItem("ytpro_silence_threshold") == null) localStorage.setItem("ytpro_silence_threshold", "-45");
+if (localStorage.getItem("ytpro_skip_silence_speed") == null) localStorage.setItem("ytpro_skip_silence_speed", "2.5");
+if (localStorage.getItem("ytpro_audio_only") == null) localStorage.setItem("ytpro_audio_only", "false");
 if(localStorage.getItem("fzoom") == "true"){
 document.getElementsByName("viewport")[0].setAttribute("content","");
 }
@@ -99,6 +108,651 @@ var d="#f2f2f2";
 var dc="#fff";
 var isD=false;
 var dislikes="...";
+
+/* ==========================================================================
+   YTPRO AUDIO ENGINE: JamesDSP Equalizer, Skip Silence & Audio Only Mode
+   ========================================================================== */
+window.YTProAudioEngine = {
+    audioCtx: null,
+    sourceNode: null,
+    bassFilter: null,
+    eqFilters: [],
+    trebleFilter: null,
+    compressorNode: null,
+    masterGainNode: null,
+    analyserNode: null,
+    mediaElement: null,
+
+    eqEnabled: localStorage.getItem("ytpro_eq_enabled") === "true",
+    eqPreset: localStorage.getItem("ytpro_eq_preset") || "jamesdsp",
+    bassBoostGain: parseFloat(localStorage.getItem("ytpro_bass_boost") || "6"),
+    trebleBoostGain: parseFloat(localStorage.getItem("ytpro_treble_boost") || "4"),
+    compressionEnabled: localStorage.getItem("ytpro_compression") !== "false",
+
+    skipSilenceEnabled: localStorage.getItem("ytpro_skip_silence") === "true",
+    silenceThresholdDb: parseFloat(localStorage.getItem("ytpro_silence_threshold") || "-45"),
+    skipSilenceSpeed: parseFloat(localStorage.getItem("ytpro_skip_silence_speed") || "2.5"),
+    silenceStartTime: 0,
+    isSkippingSilence: false,
+    originalPlaybackRate: 1.0,
+
+    frequencies: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+    presets: {
+        flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        jamesdsp: [6, 5, 3, 1, -1, 0, 1, 3, 5, 6],
+        bassboost: [8, 7, 6, 4, 1, 0, 0, 0, 0, 0],
+        trebleboost: [0, 0, 0, 0, 1, 2, 4, 6, 7, 8],
+        vocal: [-2, -1, 1, 3, 4, 4, 3, 1, 0, -1],
+        rock: [4, 3, 2, 0, -1, 1, 3, 4, 4, 5],
+        pop: [-1, 1, 3, 4, 3, 0, 1, 2, 3, 3],
+        jazz: [3, 2, 1, 2, -1, -1, 0, 1, 2, 3],
+        classical: [4, 3, 2, 2, -1, -1, 0, 2, 3, 4]
+    },
+    customGains: JSON.parse(localStorage.getItem("ytpro_eq_custom_gains") || "[0,0,0,0,0,0,0,0,0,0]"),
+
+    init: function(videoEl) {
+        if (!videoEl || this.mediaElement === videoEl) return;
+        this.mediaElement = videoEl;
+
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!this.audioCtx) {
+                this.audioCtx = new AudioCtx();
+            }
+            if (this.audioCtx.state === "suspended") {
+                const resumeCtx = () => {
+                    if (this.audioCtx && this.audioCtx.state === "suspended") {
+                        this.audioCtx.resume();
+                    }
+                };
+                window.addEventListener("click", resumeCtx, { once: true });
+                window.addEventListener("touchstart", resumeCtx, { once: true });
+            }
+
+            if (!videoEl.__ytproAudioSource) {
+                this.sourceNode = this.audioCtx.createMediaElementSource(videoEl);
+                videoEl.__ytproAudioSource = this.sourceNode;
+            } else {
+                this.sourceNode = videoEl.__ytproAudioSource;
+            }
+
+            this.bassFilter = this.audioCtx.createBiquadFilter();
+            this.bassFilter.type = "lowshelf";
+            this.bassFilter.frequency.value = 100;
+            this.bassFilter.gain.value = this.eqEnabled ? this.bassBoostGain : 0;
+
+            this.eqFilters = this.frequencies.map((freq) => {
+                const filter = this.audioCtx.createBiquadFilter();
+                filter.type = "peaking";
+                filter.frequency.value = freq;
+                filter.Q.value = 1.4;
+                filter.gain.value = 0;
+                return filter;
+            });
+
+            this.trebleFilter = this.audioCtx.createBiquadFilter();
+            this.trebleFilter.type = "highshelf";
+            this.trebleFilter.frequency.value = 6000;
+            this.trebleFilter.gain.value = this.eqEnabled ? this.trebleBoostGain : 0;
+
+            this.compressorNode = this.audioCtx.createDynamicsCompressor();
+            this.compressorNode.threshold.value = -18;
+            this.compressorNode.knee.value = 12;
+            this.compressorNode.ratio.value = 4;
+            this.compressorNode.attack.value = 0.003;
+            this.compressorNode.release.value = 0.25;
+
+            this.analyserNode = this.audioCtx.createAnalyser();
+            this.analyserNode.fftSize = 512;
+            this.analyserNode.smoothingTimeConstant = 0.8;
+
+            this.masterGainNode = this.audioCtx.createGain();
+
+            let prevNode = this.sourceNode;
+            prevNode.connect(this.bassFilter);
+            prevNode = this.bassFilter;
+
+            for (let i = 0; i < this.eqFilters.length; i++) {
+                prevNode.connect(this.eqFilters[i]);
+                prevNode = this.eqFilters[i];
+            }
+
+            prevNode.connect(this.trebleFilter);
+            prevNode = this.trebleFilter;
+
+            if (this.compressionEnabled) {
+                prevNode.connect(this.compressorNode);
+                prevNode = this.compressorNode;
+            }
+
+            prevNode.connect(this.masterGainNode);
+            this.masterGainNode.connect(this.analyserNode);
+            this.analyserNode.connect(this.audioCtx.destination);
+
+            this.applyPreset(this.eqPreset);
+            this.startSilenceDetector();
+        } catch (err) {
+            console.error("YTPro Audio Engine initialization error:", err);
+        }
+    },
+
+    applyPreset: function(presetName) {
+        this.eqPreset = presetName;
+        localStorage.setItem("ytpro_eq_preset", presetName);
+
+        let gains = this.presets[presetName] || this.presets.flat;
+        if (presetName === "custom") {
+            gains = this.customGains;
+        }
+
+        for (let i = 0; i < this.eqFilters.length; i++) {
+            if (this.eqFilters[i]) {
+                const targetGain = this.eqEnabled ? (gains[i] || 0) : 0;
+                this.eqFilters[i].gain.setTargetAtTime(targetGain, this.audioCtx ? this.audioCtx.currentTime : 0, 0.05);
+            }
+        }
+
+        if (this.bassFilter) {
+            this.bassFilter.gain.setTargetAtTime(this.eqEnabled ? this.bassBoostGain : 0, this.audioCtx ? this.audioCtx.currentTime : 0, 0.05);
+        }
+
+        if (this.trebleFilter) {
+            this.trebleFilter.gain.setTargetAtTime(this.eqEnabled ? this.trebleBoostGain : 0, this.audioCtx ? this.audioCtx.currentTime : 0, 0.05);
+        }
+    },
+
+    setEqEnabled: function(enabled) {
+        this.eqEnabled = enabled;
+        localStorage.setItem("ytpro_eq_enabled", enabled ? "true" : "false");
+        this.applyPreset(this.eqPreset);
+    },
+
+    setBassBoost: function(gainDb) {
+        this.bassBoostGain = parseFloat(gainDb);
+        localStorage.setItem("ytpro_bass_boost", gainDb);
+        if (this.bassFilter && this.eqEnabled) {
+            this.bassFilter.gain.setTargetAtTime(this.bassBoostGain, this.audioCtx ? this.audioCtx.currentTime : 0, 0.05);
+        }
+    },
+
+    setTrebleBoost: function(gainDb) {
+        this.trebleBoostGain = parseFloat(gainDb);
+        localStorage.setItem("ytpro_treble_boost", gainDb);
+        if (this.trebleFilter && this.eqEnabled) {
+            this.trebleFilter.gain.setTargetAtTime(this.trebleBoostGain, this.audioCtx ? this.audioCtx.currentTime : 0, 0.05);
+        }
+    },
+
+    setCustomGain: function(index, gainDb) {
+        this.customGains[index] = parseFloat(gainDb);
+        localStorage.setItem("ytpro_eq_custom_gains", JSON.stringify(this.customGains));
+        if (this.eqPreset === "custom") {
+            this.applyPreset("custom");
+        }
+    },
+
+    setSkipSilenceEnabled: function(enabled) {
+        this.skipSilenceEnabled = enabled;
+        localStorage.setItem("ytpro_skip_silence", enabled ? "true" : "false");
+        if (!enabled && this.isSkippingSilence && this.mediaElement) {
+            this.mediaElement.playbackRate = this.originalPlaybackRate || 1.0;
+            this.isSkippingSilence = false;
+        }
+    },
+
+    setSilenceThreshold: function(dbVal) {
+        this.silenceThresholdDb = parseFloat(dbVal);
+        localStorage.setItem("ytpro_silence_threshold", dbVal);
+    },
+
+    setSkipSilenceSpeed: function(speedVal) {
+        this.skipSilenceSpeed = parseFloat(speedVal);
+        localStorage.setItem("ytpro_skip_silence_speed", speedVal);
+    },
+
+    startSilenceDetector: function() {
+        if (this.__silenceTimer) return;
+        const dataArray = new Float32Array(this.analyserNode ? this.analyserNode.fftSize : 256);
+
+        this.__silenceTimer = setInterval(() => {
+            if (!this.skipSilenceEnabled || !this.mediaElement || this.mediaElement.paused || !this.analyserNode) {
+                if (this.isSkippingSilence && this.mediaElement) {
+                    this.mediaElement.playbackRate = this.originalPlaybackRate || 1.0;
+                    this.isSkippingSilence = false;
+                }
+                return;
+            }
+
+            this.analyserNode.getFloatTimeDomainData(dataArray);
+
+            let sumSq = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sumSq += dataArray[i] * dataArray[i];
+            }
+            const rms = Math.sqrt(sumSq / dataArray.length);
+            const db = rms > 0 ? 20 * Math.log10(rms) : -100;
+
+            const now = Date.now();
+            if (db < this.silenceThresholdDb) {
+                if (!this.silenceStartTime) {
+                    this.silenceStartTime = now;
+                } else if (now - this.silenceStartTime > 180) {
+                    if (!this.isSkippingSilence) {
+                        this.originalPlaybackRate = this.mediaElement.playbackRate || 1.0;
+                        if (this.originalPlaybackRate === this.skipSilenceSpeed) {
+                            this.originalPlaybackRate = 1.0;
+                        }
+                        this.mediaElement.playbackRate = this.skipSilenceSpeed;
+                        this.isSkippingSilence = true;
+                        this.showSkipSilenceToast();
+                    }
+                }
+            } else {
+                this.silenceStartTime = 0;
+                if (this.isSkippingSilence) {
+                    this.mediaElement.playbackRate = this.originalPlaybackRate || 1.0;
+                    this.isSkippingSilence = false;
+                }
+            }
+        }, 80);
+    },
+
+    showSkipSilenceToast: function() {
+        let toast = document.getElementById("ytproSilenceToast");
+        if (!toast) {
+            toast = document.createElement("div");
+            toast.id = "ytproSilenceToast";
+            toast.style.cssText = `
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                background: rgba(0, 0, 0, 0.75);
+                color: #00ffcc;
+                border: 1px solid #00ffcc;
+                border-radius: 20px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-family: monospace;
+                z-index: 999999;
+                pointer-events: none;
+                transition: opacity 0.3s;
+                opacity: 0;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            `;
+            toast.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="#00ffcc"><path d="M13 2.05v3.03c3.39.49 6 3.39 6 6.92 0 .9-.18 1.75-.48 2.54l2.25 2.25C21.57 15.39 22 13.74 22 12c0-5.17-3.88-9.43-9-9.95zM4.27 3L3 4.27l3.28 3.28C5.07 8.78 4.25 10.3 4.05 12c.52 5.12 4.78 9 9.95 9 1.74 0 3.39-.43 4.79-1.23L20.73 21 22 19.73 4.27 3zM13 18.95c-3.53-.53-6.27-3.41-6.95-6.95l7.95 7.95v-1z"/></svg> Fast-forwarding Silence (${this.skipSilenceSpeed}x)`;
+            const pCont = document.getElementById("player-container-id") || document.body;
+            pCont.appendChild(toast);
+        }
+        toast.style.opacity = "1";
+        clearTimeout(toast.__timer);
+        toast.__timer = setTimeout(() => {
+            if (toast) toast.style.opacity = "0";
+        }, 1200);
+    }
+};
+
+window.YTProAudioMode = {
+    enabled: localStorage.getItem("ytpro_audio_only") === "true",
+    animFrame: null,
+
+    toggle: function() {
+        this.enabled = !this.enabled;
+        localStorage.setItem("ytpro_audio_only", this.enabled ? "true" : "false");
+        this.updateUI();
+        if (typeof Android !== "undefined" && Android.showToast) {
+            Android.showToast(this.enabled ? "Audio Only Mode Enabled 🎵" : "Video Mode Enabled 🎬");
+        }
+    },
+
+    updateUI: function() {
+        const video = document.querySelector('.video-stream');
+        const pCont = document.getElementById("player-container-id") || document.getElementById("player");
+        let card = document.getElementById("ytproAudioOnlyCard");
+
+        if (this.enabled) {
+            if (video) {
+                video.style.opacity = "0";
+                try {
+                    if (video.setPlaybackQualityRange) video.setPlaybackQualityRange('tiny');
+                } catch(e){}
+            }
+
+            if (!card && pCont) {
+                card = document.createElement("div");
+                card.id = "ytproAudioOnlyCard";
+                card.style.cssText = `
+                    position: absolute;
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    background: linear-gradient(135deg, #0f0c20 0%, #15102a 50%, #060814 100%);
+                    z-index: 10;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 15px;
+                    box-sizing: border-box;
+                    color: white;
+                    overflow: hidden;
+                `;
+                pCont.appendChild(card);
+            }
+
+            if (card) {
+                let title = "Audio Only Stream";
+                try {
+                    const titleEl = document.querySelector('.slim-video-metadata-header') || document.querySelector('.ytShortsVideoTitleViewModelShortsVideoTitle');
+                    if (titleEl) title = titleEl.textContent;
+                } catch(e){}
+
+                let thumbUrl = "";
+                try {
+                    const vId = (new URLSearchParams(window.location.search)).get('v');
+                    if (vId) thumbUrl = `https://img.youtube.com/vi/${vId}/hqdefault.jpg`;
+                } catch(e){}
+
+                card.innerHTML = `
+                    <div style="position:absolute; top:0; left:0; width:100%; height:100%; background:url('${thumbUrl}') center/cover; opacity:0.15; filter:blur(20px);"></div>
+                    <div style="position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; text-align:center; width:100%;">
+                        <div style="position:relative; width:100px; height:100px; border-radius:20px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.6); margin-bottom:10px; border:2px solid rgba(255,255,255,0.1);">
+                            <img src="${thumbUrl}" style="width:100%; height:100%; object-fit:cover;" onerror="this.style.display='none'">
+                            <div style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center;">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="#3ea6ff"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                            </div>
+                        </div>
+                        <div style="font-size:13px; font-weight:bold; max-width:90%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:4px;">${title}</div>
+                        <div style="font-size:10px; color:#3ea6ff; font-weight:500; margin-bottom:10px; background:rgba(62,166,255,0.15); padding:2px 10px; border-radius:12px; border:1px solid rgba(62,166,255,0.3);">
+                            🎵 Audio Mode Active • Data Saver On
+                        </div>
+
+                        <canvas id="ytproWaveformCanvas" width="240" height="35" style="margin-bottom:8px;"></canvas>
+
+                        <div style="display:flex; align-items:center; gap:16px;">
+                            <button id="ytproAudioRewind" style="background:rgba(255,255,255,0.1); border:none; color:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+                            </button>
+                            <button id="ytproAudioPlayPause" style="background:#3ea6ff; border:none; color:white; border-radius:50%; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(62,166,255,0.4);">
+                                <svg id="ytproAudioPlayIcon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            </button>
+                            <button id="ytproAudioFF" style="background:rgba(255,255,255,0.1); border:none; color:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+                            </button>
+                        </div>
+
+                        <button id="ytproSwitchToVideo" style="margin-top:10px; background:transparent; border:1px solid rgba(255,255,255,0.3); color:#ccc; border-radius:14px; padding:3px 10px; font-size:10px; cursor:pointer;">
+                            🎬 Switch to Video
+                        </button>
+                    </div>
+                `;
+
+                document.getElementById("ytproAudioRewind").addEventListener("click", () => {
+                    if (video) video.currentTime = Math.max(0, video.currentTime - 10);
+                });
+                document.getElementById("ytproAudioFF").addEventListener("click", () => {
+                    if (video) video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
+                });
+                document.getElementById("ytproAudioPlayPause").addEventListener("click", () => {
+                    if (video) {
+                        if (video.paused) video.play(); else video.pause();
+                    }
+                });
+                document.getElementById("ytproSwitchToVideo").addEventListener("click", () => {
+                    this.toggle();
+                });
+
+                this.startVisualizer();
+            }
+        } else {
+            if (video) video.style.opacity = "1";
+            if (card) card.remove();
+            if (this.animFrame) cancelAnimationFrame(this.animFrame);
+        }
+    },
+
+    startVisualizer: function() {
+        const canvas = document.getElementById("ytproWaveformCanvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const analyser = window.YTProAudioEngine ? window.YTProAudioEngine.analyserNode : null;
+        if (!analyser) return;
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const draw = () => {
+            if (!this.enabled || !document.getElementById("ytproWaveformCanvas")) return;
+            this.animFrame = requestAnimationFrame(draw);
+            analyser.getByteFrequencyData(dataArray);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const barWidth = (canvas.width / 32) - 2;
+            let x = 0;
+
+            for (let i = 0; i < 32; i++) {
+                const barHeight = (dataArray[i * 4] / 255) * canvas.height;
+                const grad = ctx.createLinearGradient(0, canvas.height, 0, 0);
+                grad.addColorStop(0, '#3ea6ff');
+                grad.addColorStop(1, '#00ffcc');
+
+                ctx.fillStyle = grad;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 2;
+            }
+        };
+        draw();
+    }
+};
+
+function showEqualizerModal() {
+    var eqDiv = document.createElement("div");
+    var eqDivI = document.createElement("div");
+    eqDiv.setAttribute("id", "outereqytprodiv");
+    eqDiv.setAttribute("style", `
+        height:100%;width:100%;position:fixed;top:0;left:0;
+        display:flex;justify-content:center;
+        background:rgba(0,0,0,0.6);
+        z-index:999999999;
+    `);
+
+    eqDivI.setAttribute("style", `
+        height:80%;width:calc(92% - 20px);max-width:500px;overflow-y:auto;
+        background:${isD ? "#1e1e1e" : "#ffffff"};
+        position:fixed;bottom:20px;
+        z-index:9999999999;padding:15px;border-radius:24px;
+        color:${isD ? "#ececec" : "#222222"};
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    `);
+
+    eqDiv.addEventListener("click", function(ev) {
+        if (!eqDivI.contains(ev.target)) {
+            history.back();
+        }
+    });
+
+    const isEqOn = YTProAudioEngine.eqEnabled;
+    const currentPreset = YTProAudioEngine.eqPreset;
+    const isSkipOn = YTProAudioEngine.skipSilenceEnabled;
+
+    let presetButtonsHtml = "";
+    const presetList = [
+        { id: "jamesdsp", name: "JamesDSP Special" },
+        { id: "bassboost", name: "Bass Boost" },
+        { id: "trebleboost", name: "Treble Boost" },
+        { id: "vocal", name: "Vocal / Podcast" },
+        { id: "rock", name: "Rock" },
+        { id: "pop", name: "Pop" },
+        { id: "jazz", name: "Jazz" },
+        { id: "classical", name: "Classical" },
+        { id: "flat", name: "Flat" },
+        { id: "custom", name: "Custom" }
+    ];
+
+    presetList.forEach(p => {
+        const active = currentPreset === p.id;
+        presetButtonsHtml += `<button data-preset="${p.id}" class="ytpro-preset-btn" style="
+            padding: 6px 12px; margin: 3px; border-radius: 16px; border: 1px solid ${active ? '#3ea6ff' : (isD ? '#444' : '#ccc')};
+            background: ${active ? '#3ea6ff' : (isD ? '#2a2a2a' : '#f0f0f0')};
+            color: ${active ? '#ffffff' : (isD ? '#eee' : '#333')};
+            font-size: 12px; font-weight: ${active ? 'bold' : 'normal'};
+            cursor: pointer; transition: all 0.2s;
+        ">${p.name}</button>`;
+    });
+
+    let slidersHtml = "";
+    const freqs = YTProAudioEngine.frequencies;
+    const currentGains = currentPreset === "custom" ? YTProAudioEngine.customGains : (YTProAudioEngine.presets[currentPreset] || YTProAudioEngine.presets.flat);
+
+    freqs.forEach((f, idx) => {
+        const label = f >= 1000 ? (f / 1000) + "kHz" : f + "Hz";
+        const val = currentGains[idx] || 0;
+        slidersHtml += `
+            <div style="display:flex; flex-direction:column; align-items:center; width:34px; margin:0 1px;">
+                <span id="eqGainVal_${idx}" style="font-size:9px; font-family:monospace; color:#3ea6ff;">${val > 0 ? '+' + val : val}dB</span>
+                <input type="range" data-eq-idx="${idx}" min="-12" max="12" step="1" value="${val}" style="
+                    writing-mode: bt-lr; -webkit-appearance: slider-vertical; height: 90px; width: 16px; margin: 6px 0;
+                ">
+                <span style="font-size:8px; color:${isD ? '#aaa' : '#666'};">${label}</span>
+            </div>
+        `;
+    });
+
+    eqDivI.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid ${isD ? '#333' : '#eee'}; padding-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="#3ea6ff"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+                <b style="font-size:16px;">JamesDSP Audio Enhancer</b>
+            </div>
+            <button id="closeEqModal" style="background:none; border:none; color:${isD ? '#ccc' : '#444'}; font-size:20px; font-weight:bold; cursor:pointer;">&times;</button>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; background:${isD ? '#2a2a2a' : '#f8f8f8'}; padding:10px 14px; border-radius:16px; margin-bottom:14px;">
+            <div>
+                <div style="font-weight:bold; font-size:14px;">Enable Equalizer & DSP</div>
+                <div style="font-size:11px; color:${isD ? '#aaa' : '#666'};">JamesDSP parametric sound enhancement</div>
+            </div>
+            <input type="checkbox" id="toggleEqEnable" ${isEqOn ? 'checked' : ''} style="width:20px; height:20px; accent-color:#3ea6ff;">
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <div style="font-size:12px; font-weight:bold; margin-bottom:6px; color:${isD ? '#ccc' : '#444'};">DSP Presets</div>
+            <div style="display:flex; flex-wrap:wrap;">
+                ${presetButtonsHtml}
+            </div>
+        </div>
+
+        <div style="background:${isD ? '#252525' : '#f5f5f5'}; padding:10px; border-radius:16px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:12px; font-weight:bold;">Bass Boost (Sub-Bass)</span>
+                <span id="bassBoostVal" style="font-size:11px; font-family:monospace; color:#3ea6ff;">+${YTProAudioEngine.bassBoostGain} dB</span>
+            </div>
+            <input type="range" id="bassBoostSlider" min="0" max="15" step="1" value="${YTProAudioEngine.bassBoostGain}" style="width:100%; accent-color:#3ea6ff;">
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:6px;">
+                <span style="font-size:12px; font-weight:bold;">Treble & Clarity Boost</span>
+                <span id="trebleBoostVal" style="font-size:11px; font-family:monospace; color:#3ea6ff;">+${YTProAudioEngine.trebleBoostGain} dB</span>
+            </div>
+            <input type="range" id="trebleBoostSlider" min="0" max="15" step="1" value="${YTProAudioEngine.trebleBoostGain}" style="width:100%; accent-color:#3ea6ff;">
+        </div>
+
+        <div style="background:${isD ? '#252525' : '#f5f5f5'}; padding:10px; border-radius:16px; margin-bottom:14px;">
+            <div style="font-size:12px; font-weight:bold; margin-bottom:8px; text-align:center;">10-Band Equalizer</div>
+            <div style="display:flex; justify-content:space-around; align-items:flex-end;">
+                ${slidersHtml}
+            </div>
+        </div>
+
+        <div style="background:${isD ? '#252525' : '#f5f5f5'}; padding:12px; border-radius:16px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div style="font-weight:bold; font-size:14px; display:flex; align-items:center; gap:6px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#00ffcc"><path d="M13 2.05v3.03c3.39.49 6 3.39 6 6.92 0 .9-.18 1.75-.48 2.54l2.25 2.25C21.57 15.39 22 13.74 22 12c0-5.17-3.88-9.43-9-9.95zM4.27 3L3 4.27l3.28 3.28C5.07 8.78 4.25 10.3 4.05 12c.52 5.12 4.78 9 9.95 9 1.74 0 3.39-.43 4.79-1.23L20.73 21 22 19.73 4.27 3zM13 18.95c-3.53-.53-6.27-3.41-6.95-6.95l7.95 7.95v-1z"/></svg>
+                        Skip Silence
+                    </div>
+                    <div style="font-size:11px; color:${isD ? '#aaa' : '#666'};">Automatically fast-forwards quiet/silent parts</div>
+                </div>
+                <input type="checkbox" id="toggleSkipSilence" ${isSkipOn ? 'checked' : ''} style="width:20px; height:20px; accent-color:#00ffcc;">
+            </div>
+
+            <div style="margin-top:10px; display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:11px; display:block; margin-bottom:4px; color:${isD ? '#aaa' : '#666'};">Sensitivity</label>
+                    <select id="silenceThreshSelect" style="width:100%; padding:6px; border-radius:10px; background:${isD ? '#333' : '#fff'}; color:${isD ? '#fff' : '#000'}; border:1px solid ${isD ? '#444' : '#ccc'}; font-size:12px;">
+                        <option value="-35" ${YTProAudioEngine.silenceThresholdDb === -35 ? 'selected' : ''}>Low (-35 dB)</option>
+                        <option value="-45" ${YTProAudioEngine.silenceThresholdDb === -45 ? 'selected' : ''}>Medium (-45 dB)</option>
+                        <option value="-55" ${YTProAudioEngine.silenceThresholdDb === -55 ? 'selected' : ''}>High (-55 dB)</option>
+                    </select>
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:11px; display:block; margin-bottom:4px; color:${isD ? '#aaa' : '#666'};">Fast-forward Speed</label>
+                    <select id="skipSpeedSelect" style="width:100%; padding:6px; border-radius:10px; background:${isD ? '#333' : '#fff'}; color:${isD ? '#fff' : '#000'}; border:1px solid ${isD ? '#444' : '#ccc'}; font-size:12px;">
+                        <option value="2" ${YTProAudioEngine.skipSilenceSpeed === 2 ? 'selected' : ''}>2.0x</option>
+                        <option value="2.5" ${YTProAudioEngine.skipSilenceSpeed === 2.5 ? 'selected' : ''}>2.5x</option>
+                        <option value="3" ${YTProAudioEngine.skipSilenceSpeed === 3 ? 'selected' : ''}>3.0x</option>
+                        <option value="4" ${YTProAudioEngine.skipSilenceSpeed === 4 ? 'selected' : ''}>4.0x</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button id="doneEqModal" style="width:100%; padding:10px; border-radius:18px; background:#3ea6ff; color:#fff; font-weight:bold; border:none; font-size:14px; cursor:pointer;">Done</button>
+    `;
+
+    document.body.appendChild(eqDiv);
+    eqDiv.appendChild(eqDivI);
+
+    document.getElementById("closeEqModal").addEventListener("click", () => history.back());
+    document.getElementById("doneEqModal").addEventListener("click", () => history.back());
+
+    document.getElementById("toggleEqEnable").addEventListener("change", (e) => {
+        YTProAudioEngine.setEqEnabled(e.target.checked);
+    });
+
+    document.getElementById("bassBoostSlider").addEventListener("input", (e) => {
+        const val = e.target.value;
+        document.getElementById("bassBoostVal").innerText = "+" + val + " dB";
+        YTProAudioEngine.setBassBoost(val);
+    });
+
+    document.getElementById("trebleBoostSlider").addEventListener("input", (e) => {
+        const val = e.target.value;
+        document.getElementById("trebleBoostVal").innerText = "+" + val + " dB";
+        YTProAudioEngine.setTrebleBoost(val);
+    });
+
+    eqDivI.querySelectorAll(".ytpro-preset-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const preset = btn.dataset.preset;
+            YTProAudioEngine.applyPreset(preset);
+            try { document.getElementById("outereqytprodiv").remove(); } catch(e){}
+            showEqualizerModal();
+        });
+    });
+
+    eqDivI.querySelectorAll("input[data-eq-idx]").forEach(input => {
+        input.addEventListener("input", (e) => {
+            const idx = parseInt(e.target.dataset.eqIdx);
+            const val = parseInt(e.target.value);
+            document.getElementById(`eqGainVal_${idx}`).innerText = (val > 0 ? "+" + val : val) + "dB";
+            YTProAudioEngine.setCustomGain(idx, val);
+            if (YTProAudioEngine.eqPreset !== "custom") {
+                YTProAudioEngine.applyPreset("custom");
+            }
+        });
+    });
+
+    document.getElementById("toggleSkipSilence").addEventListener("change", (e) => {
+        YTProAudioEngine.setSkipSilenceEnabled(e.target.checked);
+    });
+
+    document.getElementById("silenceThreshSelect").addEventListener("change", (e) => {
+        YTProAudioEngine.setSilenceThreshold(e.target.value);
+    });
+
+    document.getElementById("skipSpeedSelect").addEventListener("change", (e) => {
+        YTProAudioEngine.setSkipSilenceSpeed(e.target.value);
+    });
+}
 
 
 if(document.cookie.indexOf("f6=40000") > -1){
@@ -754,6 +1408,14 @@ ytpSetI.innerHTML+=`<br><b style='font-size:18px' >YT PRO Settings</b>
 <br>
 <div>Hide Shorts <span data-action="sttCnf" data-value="shorts" style="${sttCnf(0,0,"shorts")}" ><b style="${sttCnf(0,1,"shorts")}" ></b></span></div> 
 <br>
+<div>Audio Mode Only <span data-action="sttCnf" data-value="ytpro_audio_only" style="${sttCnf(0,0,"ytpro_audio_only")}" ><b style="${sttCnf(0,1,"ytpro_audio_only")}" ></b></span></div> 
+<br>
+<button data-action="openEq">JamesDSP Equalizer & Skip Silence
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="${isD ? "#ccc" : "#444"}" viewBox="0 0 16 16">
+<path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+</svg>
+</button>
+<br>
 <div>Use single Gemini chat <span data-action="sttCnf" data-value="saveCInfo" style="${sttCnf(0,0,"saveCInfo")}" ><b style="${sttCnf(0,1,"saveCInfo")}"></b></span></div>
 <br>
 <button data-action="geminiModels">Select Gemini Model
@@ -850,6 +1512,9 @@ var actionsList={
   },
   sttCnf:(button,action)=>{
     sttCnf(button,action);
+  },
+  openEq:()=>{
+    window.location.hash='#equalizer';
   },
   geminiModels:()=>{
     document.getElementsByClassName('geminiModels')[0].style.display='block';document.getElementsByClassName('geminiModels')[0].innerHTML=getGeminiModels();
@@ -1014,6 +1679,11 @@ if(localStorage.getItem("bgplay") == "true"){
 Android.setBgPlay(true);
 }else{
 Android.setBgPlay(false);
+}
+
+if(typeof YTProAudioMode !== "undefined"){
+YTProAudioMode.enabled = (localStorage.getItem("ytpro_audio_only") == "true");
+YTProAudioMode.updateUI();
 }
 
 
@@ -1893,6 +2563,22 @@ function(){
 PIPlayer(true);
 });
 
+/*Equalizer Button*/
+var ytproAudioEqElem=document.createElement("div");
+sty(ytproAudioEqElem);
+ytproAudioEqElem.style.width="135px";
+ytproAudioEqElem.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" height="22" viewBox="0 0 24 24" width="22"><path fill="${c}" d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg><span style="margin-left:6px">Equalizer<span>`;
+ytproMainDiv.appendChild(ytproAudioEqElem);
+ytproAudioEqElem.addEventListener("click",function(){ window.location.hash="equalizer"; });
+
+/*Audio Mode Button*/
+var ytproAudioOnlyElem=document.createElement("div");
+sty(ytproAudioOnlyElem);
+ytproAudioOnlyElem.style.width="140px";
+ytproAudioOnlyElem.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" height="22" viewBox="0 0 24 24" width="22"><path fill="${c}" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg><span style="margin-left:6px">Audio Mode<span>`;
+ytproMainDiv.appendChild(ytproAudioOnlyElem);
+ytproAudioOnlyElem.addEventListener("click",function(){ YTProAudioMode.toggle(); });
+
 
 
 
@@ -2300,8 +2986,7 @@ window.onhashchange=()=>{
 try{document.getElementById("outerdownytprodiv").remove();}catch{}
 try{document.getElementById("outerheartsdiv").remove();}catch{}
 try{document.getElementById("settingsprodiv").remove();}catch{}
-//try{document.querySelector("#ytproDownloadIndicator").remove();}catch{}
-//try{document.querySelector("#ytProDownloaderDiv").remove();}catch{}
+try{document.getElementById("outereqytprodiv").remove();}catch{}
 if(window.location.hash == "#download"){
 ytproDownVid();
 }else if(window.location.hash == "#settings"){
@@ -2309,6 +2994,9 @@ ytproSettings();
 }
 else if(window.location.hash == "#hearts"){
 showHearts();
+}
+else if(window.location.hash == "#equalizer"){
+showEqualizerModal();
 }
 
 
@@ -2621,6 +3309,12 @@ addSettingsTab();
 
 try{
 var video = document.getElementsByClassName('video-stream')[0];
+if(video){
+  YTProAudioEngine.init(video);
+  if(YTProAudioMode.enabled){
+    YTProAudioMode.updateUI();
+  }
+}
 if(video.getBoundingClientRect().height > video.getBoundingClientRect().width){
 Android.fullScreen(true);
 }
