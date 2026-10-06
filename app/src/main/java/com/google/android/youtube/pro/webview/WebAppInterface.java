@@ -49,6 +49,17 @@ public class WebAppInterface {
 	public void showToast(String txt) {
 		Toast.makeText(activity.getApplicationContext(), txt, Toast.LENGTH_SHORT).show();
 	}
+
+	@JavascriptInterface
+	public void launchNativePlayer(String videoId, String videoTitle) {
+		activity.runOnUiThread(() -> {
+			Intent intent = new Intent(activity, com.google.android.youtube.pro.nativeplayer.NativePlayerActivity.class);
+			intent.putExtra(com.google.android.youtube.pro.nativeplayer.NativePlayerActivity.EXTRA_VIDEO_ID, videoId);
+			intent.putExtra(com.google.android.youtube.pro.nativeplayer.NativePlayerActivity.EXTRA_VIDEO_TITLE, videoTitle);
+			activity.startActivity(intent);
+		});
+	}
+
 	
 	@JavascriptInterface
 	public void gohome(String x) {

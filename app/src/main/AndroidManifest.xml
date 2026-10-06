@@ -1,6 +1,6 @@
 <manifest
-	xmlns:android="http://schemas.android.com/apk/res/android"
-	package="com.google.android.youtube.pro">
+	xmlns:android="http://schemas.android.com/apk/res/android">
+
 	<uses-permission android:name="android.permission.INTERNET"/>
 	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 	<uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -76,6 +76,23 @@
 				<data android:mimeType="text/plain" />
 			</intent-filter>
 		</activity>
+		<activity
+			android:name=".nativeplayer.NativePlayerActivity"
+			android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+			android:hardwareAccelerated="true"
+			android:supportsPictureInPicture="true"
+			android:theme="@style/AppTheme"
+			android:exported="false"
+			android:screenOrientation="sensorLandscape" />
+
+		<activity
+			android:name=".nativefeed.NativeFeedActivity"
+			android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+			android:hardwareAccelerated="true"
+			android:theme="@style/AppTheme"
+			android:exported="false" />
+
+
 		<service
 			android:name=".ForegroundService"
 			android:enabled="true"
@@ -85,6 +102,7 @@
 
 		<receiver android:name=".utils.NotificationActionReceiver"/>
 	</application>
+
 </manifest>
 
 
