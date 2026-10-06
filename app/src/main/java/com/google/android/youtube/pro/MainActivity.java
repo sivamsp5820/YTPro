@@ -63,8 +63,10 @@ public class MainActivity extends Activity {
         
         this.dL = dl;
         web = findViewById(R.id.web);
+        web.setBackgroundColor(android.graphics.Color.BLACK);
         
         web.getSettings().setJavaScriptEnabled(true);
+
         web.getSettings().setSupportZoom(true);
         web.getSettings().setBuiltInZoomControls(true);
         web.getSettings().setDisplayZoomControls(false);

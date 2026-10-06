@@ -5,10 +5,13 @@
 		<item name="colorAccent">@color/colorAccent</item>
 		<item name="colorControlHighlight">@color/colorControlHighlight</item>
 		<item name="colorControlNormal">@color/colorControlNormal</item>
-		<item name="android:statusBarColor">@color/colorPrimary</item>
+		<item name="android:windowBackground">@color/pitch_black</item>
+		<item name="android:statusBarColor">@color/pitch_black</item>
+		<item name="android:navigationBarColor">@color/pitch_black</item>
 		<item name="android:windowTranslucentStatus">false</item>
 		<item name="android:windowLightStatusBar">false</item>
 	</style>
+
 
 
 	<style name="NoStatusBar" parent="AppTheme">
