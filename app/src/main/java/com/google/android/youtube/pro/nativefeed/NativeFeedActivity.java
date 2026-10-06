@@ -52,6 +52,21 @@ public class NativeFeedActivity extends AppCompatActivity {
 
         swipeRefreshLayout.setOnRefreshListener(this::loadFeedData);
 
+        com.google.android.material.chip.ChipGroup chipGroup = findViewById(R.id.chip_group);
+        if (chipGroup != null) {
+            chipGroup.setOnCheckedChangeListener((group, checkedId) -> {
+                com.google.android.material.chip.Chip chip = findViewById(checkedId);
+                if (chip != null) {
+                    String category = chip.getText().toString();
+                    if ("All".equalsIgnoreCase(category)) {
+                        loadFeedData();
+                    } else {
+                        loadCategoryData(category);
+                    }
+                }
+            });
+        }
+
         bottomNavigationView.setOnItemSelectedListener(item -> {
             int itemId = item.getItemId();
             if (itemId == R.id.nav_home) {
@@ -73,6 +88,34 @@ public class NativeFeedActivity extends AppCompatActivity {
 
         loadFeedData();
     }
+
+    private void loadCategoryData(String category) {
+        swipeRefreshLayout.setRefreshing(true);
+        Executors.newSingleThreadExecutor().execute(() -> {
+            try {
+                com.google.android.youtube.pro.extractor.YouTubeSearchExtractor extractor =
+                        new com.google.android.youtube.pro.extractor.YouTubeSearchExtractor();
+                List<VideoItem> items = extractor.search(category);
+
+                if (items == null || items.isEmpty()) {
+                    items = fetchSampleFeedData();
+                }
+
+                final List<VideoItem> finalItems = items;
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    videoAdapter.setVideos(finalItems);
+                    swipeRefreshLayout.setRefreshing(false);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    swipeRefreshLayout.setRefreshing(false);
+                });
+            }
+        });
+    }
+
 
     private void loadFeedData() {
         swipeRefreshLayout.setRefreshing(true);
