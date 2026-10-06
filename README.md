@@ -1,83 +1,115 @@
 <p align="center">
-<img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/ytpro.gif' height=150  >
+  <img src="https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/ytpro.gif" height="150" alt="YTPro Banner" />
 </p>
-<h1 align=center>YT PRO </h1>
+
+<h1 align="center">YT PRO</h1>
+
+<p align="center">
+  <b>A modern, high-performance, fully native Android YouTube client built with Android Media3 ExoPlayer, Pitch Dark OLED design, and Google Gemini AI.</b>
+</p>
 
 <div align="center">
 
-
-[![Gradle](https://github.com/prateek-chaubey/YTPro/actions/workflows/gradle.yml/badge.svg)](https://github.com/prateek-chaubey/YTPro/actions/workflows/gradle.yml)
-<a href="https://www.jsdelivr.com/package/npm/ytpro?tab=stats" ><img alt="jsDelivr monthly hits badge" src="https://data.jsdelivr.com/v1/package/npm/ytpro/badge"></a>
-<img src=https://img.shields.io/github/downloads/prateek-chaubey/YTPro/total >
+  [![Gradle](https://github.com/prateek-chaubey/YTPro/actions/workflows/gradle.yml/badge.svg)](https://github.com/prateek-chaubey/YTPro/actions/workflows/gradle.yml)
+  [![GitHub release](https://img.shields.io/github/v/release/prateek-chaubey/YTPro?color=red&logo=github)](https://github.com/prateek-chaubey/YTPro/releases)
+  [![License](https://img.shields.io/github/license/prateek-chaubey/YTPro?color=blue)](LICENSE)
+  [![Downloads](https://img.shields.io/github/downloads/prateek-chaubey/YTPro/total?color=green)](https://github.com/prateek-chaubey/YTPro/releases)
 
 </div>
 
-### Become a Sponsor 
----
-> [!TIP]
-> If you like this project, consider [sponsoring](https://github.com/sponsors/prateek-chaubey) to support the author 🌸
 ---
 
-## Download YT PRO
+## 🚀 Key Features
 
-[![Download zip](https://custom-icon-badges.herokuapp.com/badge/-Download-ff0000?style=for-the-badge&logo=download&logoColor=white "Download Apk")](https://nightly.link/prateek-chaubey/YTPro/workflows/gradle/main/YTPRO.zip)
+* 📱 **100% Native Android Architecture**
+  * Fully native UI built with Material3 guidelines, native RecyclerView feeds, and custom adapters.
+  * Bypasses `m.youtube.com` completely for 60/120fps smooth scrolling.
 
-#### Screenshots
-| | | |
-|:--:|:--:|:--:| 
-|<img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen3.jpg'  > | <img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen2.jpg'  > |<img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen5.jpg'  > | 
-|<img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen6.jpg'  > | <img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen4.jpg'  > |<img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen1.jpg'  > |
+* 🎬 **Native Media Player (Android Media3 ExoPlayer)**
+  * Hardware-accelerated HLS and DASH stream playback.
+  * Immersive full-screen controls, resolution switching, and pitch/speed adjustments.
 
+* 🌑 **Pitch Dark (#000000) OLED Theme**
+  * True `#000000` pitch black aesthetic designed for AMOLED displays to minimize battery drain.
 
-## Features
- * <img src='https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/gemini-logo-13486188-10900314-unscreen-ezgif.com-crop.gif' height=15 width=15 > Google Gemini
-   * Summarise Vidoes
-   * Customisable prompts and models
- * Video Downloader
- * Shorts Downloader
- * In-built Video and Audio Muxer
- * Thumbnails Downloader
- * Captions Downloader
- * Ads Blocker
- * Minimize Video
- * Picture in Picture Mode
- * Gesture control for Volume and Brightness 
- * Shows Number of Dislikes
- * Background Audio Player
- * Custom Heart feature to save videos without logging into your account
- * Enable / disable media codecs
- * Skip Sponsers
- * Force Zoom
- * Hide Shorts
- * Upto 10x video speed 
- * Minimal APK size
- * Adaptive UI icons
- * Minimal
- * Almost 0 Internal Dependencies
- * Auto Updation of App
+* 🔗 **Native App Deep Linking**
+  * Explicit deep-linking (`vnd.youtube:<VIDEO_ID>`) into the official YouTube Android app.
+  * Automatic `ActivityNotFoundException` fallback to browser/Custom Tabs if the official app is missing.
 
+* 🤖 **Google Gemini AI Video Summaries**
+  * Generates video summaries, key takeaways, and transcript answers powered by the Google AI SDK.
 
-## Gemini Prompt
-The available variables for gemini prompt are
-* `{url}` : The URL of the video
-* `{title}` : Title of the video
-* `{videoId}` : Video Id of the video
+* 🎵 **Background Audio Playback & MediaSession**
+  * Continuous background audio playback with lock screen controls via Android `MediaSession` & `ForegroundService`.
 
-## ToDo
- * Enhance Audio
- * Skip Silence 
- 
+* 🚫 **SponsorBlock & Return YouTube Dislike**
+  * Automatic segment skipping via SponsorBlock API.
+  * Public dislike counts powered by the Return YouTube Dislike API.
 
-### Credits
- * [Sponsor Block](https://github.com/ajayyy/SponsorBlock)
- * [return-youtube-dislike](https://github.com/Anarios/return-youtube-dislike)
- * [YouTube.js](https://github.com/LuanRT/YouTube.js/)
+* ⬇️ **On-Device Stream Downloader & Muxer**
+  * Extract high-definition video and audio streams natively.
+  * On-device stream merging into MP4/MP3 containers.
 
-### ❤️Supporters❤️
-[![Stargazers repo roster for @prateek-chaubey/YTPro](http://reporoster.com/stars/dark/prateek-chaubey/YTPro)](https://github.com/prateek-chaubey/YTPro/stargazers)
-     
-[![Forkers repo roster for @prateek-chaubey/YTPro](http://reporoster.com/forks/dark/prateek-chaubey/YTPro)](https://github.com/prateek-chaubey/YTPro/network/members)
+---
 
+## 🛠 Tech Stack & Dependencies
 
-## Disclaimer 
-This is an educational project aimed at showcasing javascript injection into a webview to enhance productivity.
+| Layer | Technology |
+| :--- | :--- |
+| **Language** | Java 17 / Kotlin |
+| **UI Framework** | Android Material 3, RecyclerView, SwipeRefreshLayout |
+| **Media Engine** | `androidx.media3:media3-exoplayer`, `media3-ui`, `media3-session` |
+| **Stream Extractor** | Native InnerTube API Engine |
+| **Networking & JSON** | OkHttp 4, Gson |
+| **Image Loading** | Glide (Memory + Disk Async Caching) |
+| **AI Integration** | Google Gemini AI |
+
+---
+
+## 📱 Screenshots
+
+| Home Feed | Native ExoPlayer |
+|:--:|:--:|
+|<img src="https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen1.jpg" width="300" /> | <img src="https://raw.githubusercontent.com/prateek-chaubey/YTPro/main/.github/img/screen2.jpg" width="300" /> |
+
+---
+
+## 📦 Building from Source
+
+### Prerequisites
+* Android Studio Ladybug (2024.2.1+) or JDK 17+
+* Android SDK 36
+
+### Build Commands
+
+```bash
+# Clone the repository
+git clone https://github.com/prateek-chaubey/YTPro.git
+cd YTPro
+
+# Build Debug APK
+./gradlew assembleDebug
+
+# Build Signed Release APK
+./gradlew assembleRelease
+```
+
+The compiled APK will be located at:
+`app/build/outputs/apk/release/youtube_pro_signed.apk`
+
+---
+
+## 🤝 Credits & Acknowledgments
+
+* [Android Media3 ExoPlayer](https://developer.android.com/guide/topics/media/media3)
+* [SponsorBlock API](https://github.com/ajayyy/SponsorBlock)
+* [Return YouTube Dislike API](https://github.com/Anarios/return-youtube-dislike)
+* [Google Gemini AI](https://deepmind.google/technologies/gemini/)
+
+---
+
+## 📜 License & Disclaimer
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+*Disclaimer: This is an open-source educational project showcasing native Android media streaming, stream extraction, and AI integrations.*
