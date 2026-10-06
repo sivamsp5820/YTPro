@@ -39,7 +39,11 @@ public class NativeFeedActivity extends AppCompatActivity {
         ImageView btnSearch = findViewById(R.id.btn_search);
         ImageView btnBell = findViewById(R.id.btn_bell);
 
-        btnSearch.setOnClickListener(v -> Toast.makeText(this, "Search feature", Toast.LENGTH_SHORT).show());
+        btnSearch.setOnClickListener(v -> {
+            Intent intent = new Intent(this, com.google.android.youtube.pro.search.SearchActivity.class);
+            startActivity(intent);
+        });
+
         btnBell.setOnClickListener(v -> Toast.makeText(this, "Notifications", Toast.LENGTH_SHORT).show());
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
@@ -54,7 +58,8 @@ public class NativeFeedActivity extends AppCompatActivity {
                 loadFeedData();
                 return true;
             } else if (itemId == R.id.nav_shorts) {
-                Toast.makeText(this, "Native Shorts Player", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(this, com.google.android.youtube.pro.search.SearchActivity.class);
+                startActivity(intent);
                 return true;
             } else if (itemId == R.id.nav_subscriptions) {
                 Toast.makeText(this, "Subscriptions", Toast.LENGTH_SHORT).show();
@@ -73,22 +78,31 @@ public class NativeFeedActivity extends AppCompatActivity {
         swipeRefreshLayout.setRefreshing(true);
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
-                List<VideoItem> items = fetchSampleFeedData();
+                com.google.android.youtube.pro.extractor.YouTubeSearchExtractor extractor =
+                        new com.google.android.youtube.pro.extractor.YouTubeSearchExtractor();
+                List<VideoItem> items = extractor.getTrendingFeed();
 
+                if (items == null || items.isEmpty()) {
+                    items = fetchSampleFeedData();
+                }
+
+                final List<VideoItem> finalItems = items;
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
-                    videoAdapter.setVideos(items);
+                    videoAdapter.setVideos(finalItems);
                     swipeRefreshLayout.setRefreshing(false);
                 });
             } catch (Exception e) {
+                List<VideoItem> fallbackItems = fetchSampleFeedData();
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
+                    videoAdapter.setVideos(fallbackItems);
                     swipeRefreshLayout.setRefreshing(false);
-                    Toast.makeText(NativeFeedActivity.this, "Error loading feed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
             }
         });
     }
+
 
     private List<VideoItem> fetchSampleFeedData() {
         List<VideoItem> sampleItems = new ArrayList<>();
