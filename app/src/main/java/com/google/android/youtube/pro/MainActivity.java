@@ -84,7 +84,8 @@ public class MainActivity extends Activity {
         Intent intent = getIntent();
         String action = intent.getAction();
         Uri data = intent.getData();
-        String url = "https://m.youtube.com/";
+        String url = null;
+
         if (Intent.ACTION_VIEW.equals(action) && data != null) {
             url = data.toString();
         } else if (Intent.ACTION_SEND.equals(action)) {
@@ -93,17 +94,23 @@ public class MainActivity extends Activity {
                 url = sharedText;
             }
         }
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          web.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+
+        if (url != null) {
+            String extractedVideoId = com.google.android.youtube.pro.utils.YouTubeAppLauncher.extractVideoId(url);
+            if (extractedVideoId != null && !extractedVideoId.isEmpty()) {
+                Intent nativePlayer = new Intent(this, com.google.android.youtube.pro.nativeplayer.NativePlayerActivity.class);
+                nativePlayer.putExtra(com.google.android.youtube.pro.nativeplayer.NativePlayerActivity.EXTRA_VIDEO_ID, extractedVideoId);
+                startActivity(nativePlayer);
+                finish();
+                return;
+            }
         }
 
+        // Redirect directly to native feed
+        Intent nativeFeed = new Intent(this, com.google.android.youtube.pro.nativefeed.NativeFeedActivity.class);
+        startActivity(nativeFeed);
+        finish();
 
-        web.addJavascriptInterface(new WebAppInterface(this, web), "Android");
-        web.setWebChromeClient(new YTProWebChromeClient(this, web));
-        web.setWebViewClient(new YTProWebViewClient(this, web));
-        
-        web.loadUrl(url);
 
         setupReceiver();
         setupBackNavigation();

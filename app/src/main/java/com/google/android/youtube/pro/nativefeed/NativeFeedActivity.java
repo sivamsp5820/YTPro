@@ -1,6 +1,8 @@
 package com.google.android.youtube.pro.nativefeed;
 
+import android.content.Intent;
 import android.os.Bundle;
+import android.widget.ImageView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -8,7 +10,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
-import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.android.youtube.pro.MainActivity;
 import com.google.android.youtube.pro.R;
 import com.google.android.youtube.pro.adapters.VideoAdapter;
 import com.google.android.youtube.pro.models.VideoItem;
@@ -22,23 +25,46 @@ public class NativeFeedActivity extends AppCompatActivity {
     private SwipeRefreshLayout swipeRefreshLayout;
     private RecyclerView recyclerView;
     private VideoAdapter videoAdapter;
+    private BottomNavigationView bottomNavigationView;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_native_feed);
 
-        MaterialToolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-
         swipeRefreshLayout = findViewById(R.id.swipe_refresh);
         recyclerView = findViewById(R.id.recycler_videos);
+        bottomNavigationView = findViewById(R.id.bottom_navigation);
+
+        ImageView btnSearch = findViewById(R.id.btn_search);
+        ImageView btnBell = findViewById(R.id.btn_bell);
+
+        btnSearch.setOnClickListener(v -> Toast.makeText(this, "Search feature", Toast.LENGTH_SHORT).show());
+        btnBell.setOnClickListener(v -> Toast.makeText(this, "Notifications", Toast.LENGTH_SHORT).show());
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         videoAdapter = new VideoAdapter(this);
         recyclerView.setAdapter(videoAdapter);
 
         swipeRefreshLayout.setOnRefreshListener(this::loadFeedData);
+
+        bottomNavigationView.setOnItemSelectedListener(item -> {
+            int itemId = item.getItemId();
+            if (itemId == R.id.nav_home) {
+                loadFeedData();
+                return true;
+            } else if (itemId == R.id.nav_shorts) {
+                Toast.makeText(this, "Native Shorts Player", Toast.LENGTH_SHORT).show();
+                return true;
+            } else if (itemId == R.id.nav_subscriptions) {
+                Toast.makeText(this, "Subscriptions", Toast.LENGTH_SHORT).show();
+                return true;
+            } else if (itemId == R.id.nav_you) {
+                Toast.makeText(this, "Library & Saved Videos", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+            return false;
+        });
 
         loadFeedData();
     }
@@ -47,15 +73,16 @@ public class NativeFeedActivity extends AppCompatActivity {
         swipeRefreshLayout.setRefreshing(true);
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
-                // Fetch trending/home feed videos
                 List<VideoItem> items = fetchSampleFeedData();
 
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     videoAdapter.setVideos(items);
                     swipeRefreshLayout.setRefreshing(false);
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     swipeRefreshLayout.setRefreshing(false);
                     Toast.makeText(NativeFeedActivity.this, "Error loading feed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });

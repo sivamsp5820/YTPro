@@ -81,10 +81,14 @@ public class WebAppInterface {
 	
 	@JavascriptInterface
 	public void oplink(String url) {
-		Intent i = new Intent(Intent.ACTION_VIEW);
-		i.setData(Uri.parse(url));
-		activity.startActivity(i);
+		com.google.android.youtube.pro.utils.YouTubeAppLauncher.launchUrl(activity, url);
 	}
+
+	@JavascriptInterface
+	public void launchYouTubeApp(String videoId) {
+		com.google.android.youtube.pro.utils.YouTubeAppLauncher.launchVideo(activity, videoId);
+	}
+
 	
 	@JavascriptInterface
 	public String getInfo() {

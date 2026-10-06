@@ -104,7 +104,13 @@ public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoViewHol
                 context.startActivity(intent);
             }
         });
+
+        holder.itemView.setOnLongClickListener(v -> {
+            com.google.android.youtube.pro.utils.YouTubeAppLauncher.launchVideo(context, item.getVideoId());
+            return true;
+        });
     }
+
 
     @Override
     public int getItemCount() {
